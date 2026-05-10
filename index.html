@@ -213,8 +213,6 @@
   </header>
 
   <div id="settings">
-    <label>伺服器</label>
-    <input id="serverUrl" type="url" placeholder="https://camac-mini-1.tail766252.ts.net/asr" autocomplete="off" />
     <div id="statusDot" title="連線狀態"></div>
   </div>
 
@@ -296,7 +294,6 @@ async function dbClear() {
 }
 
 // ===== UI refs =====
-const serverUrlEl = document.getElementById('serverUrl');
 const statusDot = document.getElementById('statusDot');
 const recordBtn = document.getElementById('recordBtn');
 const timerEl = document.getElementById('timer');
@@ -307,21 +304,13 @@ const historyList = document.getElementById('historyList');
 const clearBtn = document.getElementById('clearBtn');
 
 // ===== Settings =====
-const STORAGE_KEY = 'breezeASR_serverUrl';
-serverUrlEl.value = localStorage.getItem(STORAGE_KEY) || 'https://camac-mini-1.tail766252.ts.net/asr';
-
-serverUrlEl.addEventListener('change', () => {
-  localStorage.setItem(STORAGE_KEY, serverUrlEl.value.trim());
-  checkHealth();
-});
+const SERVER_URL = 'https://camac-mini-1.tail766252.ts.net/asr';
 
 // ===== Health check =====
 let healthTimer;
 async function checkHealth() {
-  const url = serverUrlEl.value.trim();
-  if (!url) { statusDot.className = ''; return; }
   try {
-    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${SERVER_URL}/health`, { signal: AbortSignal.timeout(3000) });
     statusDot.className = res.ok ? 'ok' : 'err';
   } catch {
     statusDot.className = 'err';
@@ -397,9 +386,6 @@ recordBtn.addEventListener('click', () => {
 });
 
 async function sendAudio() {
-  const url = serverUrlEl.value.trim();
-  if (!url) { statusMsg.textContent = '請先設定伺服器網址'; return; }
-
   const mimeType = audioChunks[0]?.type || 'audio/webm';
   const ext = mimeType.includes('mp4') ? 'm4a' : 'webm';
   const blob = new Blob(audioChunks, { type: mimeType });
@@ -409,7 +395,7 @@ async function sendAudio() {
   form.append('language', 'zh');
 
   try {
-    const res = await fetch(`${url}/transcribe`, { method: 'POST', body: form });
+    const res = await fetch(`${SERVER_URL}/transcribe`, { method: 'POST', body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || res.statusText);
