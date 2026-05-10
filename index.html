@@ -214,7 +214,7 @@
 
   <div id="settings">
     <label>伺服器</label>
-    <input id="serverUrl" type="url" placeholder="http://camac-mini-1:8765" autocomplete="off" />
+    <input id="serverUrl" type="url" placeholder="https://camac-mini-1.tail766252.ts.net/asr" autocomplete="off" />
     <div id="statusDot" title="連線狀態"></div>
   </div>
 
@@ -308,7 +308,7 @@ const clearBtn = document.getElementById('clearBtn');
 
 // ===== Settings =====
 const STORAGE_KEY = 'breezeASR_serverUrl';
-serverUrlEl.value = localStorage.getItem(STORAGE_KEY) || 'http://camac-mini-1:8765';
+serverUrlEl.value = localStorage.getItem(STORAGE_KEY) || 'https://camac-mini-1.tail766252.ts.net/asr';
 
 serverUrlEl.addEventListener('change', () => {
   localStorage.setItem(STORAGE_KEY, serverUrlEl.value.trim());
