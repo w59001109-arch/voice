@@ -1,5 +1,5 @@
-const CACHE = 'voice-v1';
-const OLD = ['breeze-asr-v1', 'breeze-asr-v0', 'breeze-asr-v2'];
+const CACHE = 'voice-v2';
+const OLD = ['breeze-asr-v1', 'breeze-asr-v0', 'breeze-asr-v2', 'voice-v1'];
 const ASSETS = ['/voice/', '/voice/index.html', '/voice/manifest.json'];
 
 self.addEventListener('install', e => {
