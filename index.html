@@ -191,6 +191,22 @@
     }
     #clearBtn:active { opacity: 0.7; }
 
+    /* 上傳按鈕 */
+    #uploadBtn {
+      background: var(--surface2);
+      border: 1px solid var(--surface2);
+      border-radius: 12px;
+      color: var(--text2);
+      font-size: 0.85rem;
+      padding: 8px 20px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #uploadBtn:hover { border-color: var(--accent2); color: var(--accent); }
+    #uploadBtn:active { opacity: 0.7; }
+    #uploadBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
     /* loading spinner */
     .spinner {
       display: inline-block;
@@ -220,6 +236,8 @@
     <button id="recordBtn" aria-label="開始錄音">🎙️</button>
     <div id="timer"></div>
     <div id="statusMsg">點擊麥克風開始錄音</div>
+    <input type="file" id="fileInput" accept="audio/*,video/*" style="display:none" />
+    <button id="uploadBtn">📁 上傳影音檔</button>
   </div>
 
   <div id="resultBox">
@@ -302,6 +320,8 @@ const resultText = document.getElementById('resultText');
 const copyBtn = document.getElementById('copyBtn');
 const historyList = document.getElementById('historyList');
 const clearBtn = document.getElementById('clearBtn');
+const uploadBtn = document.getElementById('uploadBtn');
+const fileInput = document.getElementById('fileInput');
 
 // ===== Settings =====
 const SERVER_URL = 'https://camac-mini-1.tail766252.ts.net/asr';
@@ -356,6 +376,7 @@ async function startRecording() {
     recordBtn.textContent = '⏹️';
     timerEl.className = 'active';
     statusMsg.textContent = '錄音中，再按一次停止';
+    uploadBtn.disabled = true;
 
     timerInterval = setInterval(() => {
       timerEl.textContent = formatTime(Date.now() - recordStartTime);
@@ -389,11 +410,14 @@ async function sendAudio() {
   const mimeType = audioChunks[0]?.type || 'audio/webm';
   const ext = mimeType.includes('mp4') ? 'm4a' : 'webm';
   const blob = new Blob(audioChunks, { type: mimeType });
+  await sendAudioBlob(blob, `recording.${ext}`);
+  uploadBtn.disabled = false;
+}
 
+async function sendAudioBlob(blob, filename) {
   const form = new FormData();
-  form.append('audio', blob, `recording.${ext}`);
+  form.append('audio', blob, filename);
   form.append('language', 'zh');
-
   try {
     const res = await fetch(`${SERVER_URL}/transcribe`, { method: 'POST', body: form });
     if (!res.ok) {
@@ -403,11 +427,9 @@ async function sendAudio() {
     const data = await res.json();
     const text = data.text || '（無法辨識）';
     const elapsed = data.elapsed_seconds;
-
     resultText.textContent = text;
     copyBtn.style.display = 'inline-block';
     statusMsg.textContent = `轉錄完成（耗時 ${elapsed}s）`;
-
     await dbAdd(text, elapsed);
     await renderHistory();
   } catch (err) {
@@ -416,6 +438,79 @@ async function sendAudio() {
     copyBtn.style.display = 'none';
   }
 }
+
+// 將 AudioBuffer 編碼為 WAV Blob（單聲道 16-bit PCM）
+function audioBufferToWav(buffer) {
+  const samples = buffer.getChannelData(0);
+  const dataLen = samples.length * 2;
+  const ab = new ArrayBuffer(44 + dataLen);
+  const v = new DataView(ab);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0,'RIFF'); v.setUint32(4, 36 + dataLen, true);
+  str(8,'WAVE'); str(12,'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, buffer.sampleRate, true);
+  v.setUint32(28, buffer.sampleRate * 2, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); str(36,'data'); v.setUint32(40, dataLen, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+  return new Blob([ab], { type: 'audio/wav' });
+}
+
+// 用 OfflineAudioContext 重取樣至 16kHz 單聲道
+async function resampleTo16kHz(audioBuffer) {
+  const rate = 16000;
+  const ctx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * rate), rate);
+  const src = ctx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(ctx.destination);
+  src.start(0);
+  return ctx.startRendering();
+}
+
+// 處理上傳的影音檔
+async function processFile(file) {
+  recordBtn.disabled = true;
+  uploadBtn.disabled = true;
+  resultText.textContent = '';
+  copyBtn.style.display = 'none';
+  try {
+    let audioBlob;
+    if (file.type.startsWith('video/')) {
+      statusMsg.innerHTML = '<span class="spinner"></span> 擷取音訊中…';
+      const arrayBuffer = await file.arrayBuffer();
+      const actx = new AudioContext();
+      let decoded;
+      try { decoded = await actx.decodeAudioData(arrayBuffer); }
+      finally { actx.close(); }
+      const resampled = await resampleTo16kHz(decoded);
+      audioBlob = audioBufferToWav(resampled);
+    } else {
+      audioBlob = file;
+    }
+    statusMsg.innerHTML = '<span class="spinner"></span> 上傳轉錄中…';
+    await sendAudioBlob(audioBlob, file.type.startsWith('video/') ? 'audio.wav' : file.name);
+  } catch (err) {
+    statusMsg.textContent = `錯誤：${err.message}`;
+    resultText.textContent = '';
+    copyBtn.style.display = 'none';
+  } finally {
+    recordBtn.disabled = false;
+    uploadBtn.disabled = false;
+    fileInput.value = '';
+  }
+}
+
+// ===== File upload =====
+uploadBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  if (file) processFile(file);
+});
 
 // ===== Copy =====
 copyBtn.addEventListener('click', async () => {
